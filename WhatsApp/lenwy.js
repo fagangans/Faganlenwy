@@ -671,6 +671,7 @@ export default async (lenwy, m, meta) => {
     plugins,
     commands,
     normalizedSender,
+    pushname,
     deleteMessage,
   });
 };

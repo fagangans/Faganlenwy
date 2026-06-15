@@ -5,7 +5,8 @@
   "type": "module",
   "main": "LenwySet.js",
   "scripts": {
-    "start": "node LenwySet.js"
+    "start": "node LenwySet.js",
+    "dashboard": "node WhatsApp/dashboard/server.js"
   },
   "author": "Lenwy",
   "license": "MIT",
