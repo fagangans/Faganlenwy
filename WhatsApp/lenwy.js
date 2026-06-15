@@ -17,6 +17,7 @@
 // [ ===== Import File ===== ]
 import "./len.js";
 import "./database/Menu/LenwyMenu.js";
+import { getAIAnswer } from "./case/ai/ai4chat.js";
 
 // [ ===== Import Pustaka ===== ]
 import fs from "fs";
@@ -359,7 +360,26 @@ export default async (lenwy, m, meta) => {
       break;
     }
   }
-  if (!usedPrefix && !globalThis.noprefix) return;
+
+  // [ Auto AI ]
+  // Pesan TANPA prefix langsung dijawab AI (tanpa perlu mengetik .ai di depan).
+  // Perintah biasa (mis. .ping, .menu) tetap pakai prefix seperti biasa.
+  if (!usedPrefix) {
+    const autoAllowed =
+      globalThis.autoAI &&
+      body.trim() &&
+      (!isGroup || globalThis.autoAIPrivateOnly === false);
+
+    if (autoAllowed) {
+      console.log(chalk.magenta.bold("[AUTO-AI]"), chalk.white(body.trim()));
+      const answer = await getAIAnswer(body.trim());
+      if (answer) return lenwyreply(`*Lenwy AI*\n\n${answer}`);
+      return lenwyreply("⚠️ AI sedang tidak merespon. Coba lagi sebentar lagi.");
+    }
+
+    // Tanpa prefix & Auto AI nonaktif → abaikan (kecuali mode noprefix)
+    if (!globalThis.noprefix) return;
+  }
 
   const args = usedPrefix
     ? body.slice(usedPrefix.length).trim().split(" ")

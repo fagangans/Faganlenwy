@@ -43,15 +43,9 @@ async function askPublicAI(q) {
   return data?.data?.response || null;
 }
 
-export default async function handler(lenwy) {
-  const { command, q, LenwyText, LenwyWait } = lenwy;
-
-  if (command !== "ai") return;
-  if (!q) return LenwyText("☘️ *Contoh:* .ai Apa itu JavaScript?");
-
-  LenwyWait();
-
-  // Coba beberapa sumber AI berurutan agar lebih andal
+// Fungsi AI yang bisa dipakai ulang (oleh perintah .ai maupun mode Auto AI).
+// Mencoba beberapa sumber berurutan agar lebih andal.
+export async function getAIAnswer(q) {
   let answer = null;
 
   try {
@@ -67,6 +61,19 @@ export default async function handler(lenwy) {
       console.error("PublicAI gagal:", err.message);
     }
   }
+
+  return answer;
+}
+
+export default async function handler(lenwy) {
+  const { command, q, LenwyText, LenwyWait } = lenwy;
+
+  if (command !== "ai") return;
+  if (!q) return LenwyText("☘️ *Contoh:* .ai Apa itu JavaScript?");
+
+  LenwyWait();
+
+  const answer = await getAIAnswer(q);
 
   if (!answer) {
     return LenwyText("⚠️ Semua sumber AI sedang tidak merespon. Coba lagi nanti.");

@@ -36,6 +36,14 @@ globalThis.noprefix = false; // True = Tanpa Prefix, False = Pakai Prefix
 // false = fitur di chat pribadi hanya untuk Owner/Premium
 globalThis.openPrivate = true;
 
+// Auto AI — balas setiap chat tanpa perlu mengetik .ai di depan
+// true  = setiap pesan (tanpa prefix) langsung dijawab AI
+// false = harus pakai perintah .ai
+globalThis.autoAI = true;
+// true  = Auto AI hanya aktif di chat pribadi (disarankan, agar tidak spam di grup)
+// false = Auto AI juga aktif di dalam grup
+globalThis.autoAIPrivateOnly = true;
+
 // Custom Menu Image
 globalThis.MenuImage = path.join(__dirname, "./database/image/lenwy.jpeg"); // Ganti Dengan Path Gambar Menu
 
