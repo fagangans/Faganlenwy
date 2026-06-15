@@ -226,7 +226,9 @@ export default async (lenwy, m, meta) => {
 
   // Custom Reply
   const lenwyreply = (teks) =>
-    lenwy.sendMessage(replyJid, { text: teks }, { quoted: len });
+    lenwy.sendMessage(replyJid, { text: teks }, { quoted: len })
+      .then(() => console.log(chalk.green.bold("[✔] Pesan Terkirim ke " + replyJid)))
+      .catch((err) => console.error(chalk.red.bold("[✘] Gagal Kirim Pesan:"), err.message));
 
   // Gambar Menu
   const MenuImage = fs.readFileSync(globalThis.MenuImage);
@@ -353,7 +355,9 @@ export default async (lenwy, m, meta) => {
 
   // Helper
   const LenwyText = (text) =>
-    lenwy.sendMessage(replyJid, { text }, { quoted: len });
+    lenwy.sendMessage(replyJid, { text }, { quoted: len })
+      .then(() => console.log(chalk.green.bold("[✔] Pesan Terkirim ke " + replyJid)))
+      .catch((err) => console.error(chalk.red.bold("[✘] Gagal Kirim Pesan:"), err.message));
 
   const LenwyWait = () => lenwyreply(globalThis.mess.wait);
 
