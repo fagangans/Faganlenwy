@@ -29,6 +29,8 @@ export default async function handler(leni) {
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `➤ .ai [pertanyaan] — Tanya AI apapun\n` +
     `➤ .resetai — Reset memori percakapan AI\n` +
+    `➤ .imagine [deskripsi] — Generate gambar dari teks dengan AI\n` +
+    `➤ .imagine list — Lihat semua gaya (anime, realis, 3d, dll)\n` +
     `➤ .publicai [pertanyaan] — AI alternatif\n` +
     `➤ .webpilot [pertanyaan] — AI + pencarian web\n` +
     `➤ .remini — HD-kan foto dengan AI\n` +
