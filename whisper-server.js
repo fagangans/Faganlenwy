@@ -92,11 +92,11 @@ const EDGE_VOICES = {
 
 // TTS utama — Microsoft Edge Neural Voice, suara sangat natural, gratis tanpa API key.
 // Tidak perlu chunking manual: Edge TTS menangani teks panjang dalam satu koneksi.
-async function edgeTextToSpeech(text, voiceName) {
+async function edgeTextToSpeech(text, voiceName, rate = "+15%") {
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
 
-  const { audioStream } = tts.toStream(text);
+  const { audioStream } = tts.toStream(text, { rate });
 
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -151,12 +151,13 @@ async function googleTTSFallback(text, lang = "id") {
 }
 
 // Fungsi utama: coba Edge Neural TTS dulu (natural), fallback ke Google TTS kalau gagal
-async function textToSpeech(text, voice = "id") {
+// rate: kecepatan bicara, mis. "+0%" (normal), "+15%" (cepat, default), "+30%" (sangat cepat)
+async function textToSpeech(text, voice = "id", rate = "+15%") {
   const voiceName = EDGE_VOICES[voice] || EDGE_VOICES.id;
   const fallbackLang = voice === "en" ? "en" : "id";
 
   try {
-    return await edgeTextToSpeech(text, voiceName);
+    return await edgeTextToSpeech(text, voiceName, rate);
   } catch (err) {
     console.error("[FaiWand] Edge TTS gagal, fallback ke Google TTS:", err.message);
     return await googleTTSFallback(text, fallbackLang);
@@ -169,10 +170,11 @@ app.get("/api/health", (req, res) => {
 });
 
 // ---- POST /api/chat ----
-// Body JSON: { question: "...", voice: "id-ID-ArdiNeural" }
+// Body JSON: { question: "...", voice: "id", rate: "+15%" }
+// rate: kecepatan bicara — "+0%" normal, "+15%" cepat (default), "+30%" sangat cepat
 // Response: audio/mpeg langsung
 app.post("/api/chat", async (req, res) => {
-  const { question, voice = "id" } = req.body || {};
+  const { question, voice = "id", rate = "+15%" } = req.body || {};
 
   if (!question?.trim()) {
     return res.status(400).json({ ok: false, error: "Field 'question' wajib diisi." });
@@ -194,7 +196,7 @@ app.post("/api/chat", async (req, res) => {
   // Step 2: jawaban → audio (TTS)
   const startTTS = Date.now();
   try {
-    const audioBuffer = await textToSpeech(cleanForTTS(answer), voice);
+    const audioBuffer = await textToSpeech(cleanForTTS(answer), voice, rate);
     console.log(`[FaiWand] Audio siap (${Date.now() - startTTS}ms, ${Math.round(audioBuffer.length / 1024)} KB)`);
 
     res.set({
@@ -229,6 +231,8 @@ app.get("/", (req, res) => {
     .status { text-align: center; font-size: 0.85rem; color: #888; margin-bottom: 20px; min-height: 20px; }
     .status.error { color: #ef4444; }
     select { width: 100%; padding: 10px 12px; background: #1e1e1e; color: #ccc; border: 1px solid #333; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem; }
+    .rate-label { display: block; font-size: 0.82rem; color: #888; margin-bottom: 8px; }
+    input[type=range] { width: 100%; margin-bottom: 16px; accent-color: #4f46e5; }
     audio { width: 100%; margin-top: 12px; display: none; }
     .answer { margin-top: 16px; background: #1e1e1e; border-radius: 8px; padding: 14px; font-size: 0.85rem; color: #bbb; line-height: 1.6; display: none; }
     .hint { text-align: center; font-size: 0.75rem; color: #444; margin-top: 20px; }
@@ -249,6 +253,9 @@ app.get("/", (req, res) => {
     <option value="en">Suara Inggris</option>
   </select>
 
+  <label class="rate-label">Kecepatan Bicara: <span id="rateVal">Cepat (+15%)</span></label>
+  <input type="range" id="rateSlider" min="0" max="50" value="15" step="5" oninput="updateRateLabel()">
+
   <audio id="player" controls></audio>
   <div class="answer" id="answer"></div>
 
@@ -263,6 +270,12 @@ function setStatus(msg, isError = false) {
   const el = document.getElementById('status');
   el.textContent = msg;
   el.className = 'status' + (isError ? ' error' : '');
+}
+
+function updateRateLabel() {
+  const val = document.getElementById('rateSlider').value;
+  const prefix = val == 0 ? 'Normal' : val <= 15 ? 'Cepat' : 'Sangat Cepat';
+  document.getElementById('rateVal').textContent = prefix + ' (+' + val + '%)';
 }
 
 function toggleListen() {
@@ -321,6 +334,7 @@ async function askAI(question) {
   setStatus('🤖 AI sedang menjawab...');
 
   const voice = document.getElementById('voiceSelect').value;
+  const rate = '+' + document.getElementById('rateSlider').value + '%';
   const player = document.getElementById('player');
   const answerEl = document.getElementById('answer');
 
@@ -328,7 +342,7 @@ async function askAI(question) {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, voice })
+      body: JSON.stringify({ question, voice, rate })
     });
 
     if (!res.ok) {
