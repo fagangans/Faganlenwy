@@ -13,6 +13,7 @@
 import "dotenv/config";
 import express from "express";
 import axios from "axios";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import Ai4Chat from "./WhatsApp/scrape/Ai4Chat.js";
 
 // Fallback AI kalau Ai4Chat down (dipakai juga oleh ai4chat.js di bot WhatsApp)
@@ -20,6 +21,40 @@ async function askPublicAI(q) {
   const url = `https://api.fromscratch.web.id/v1/api/ai/publicai?query=${encodeURIComponent(q)}`;
   const { data } = await axios.get(url, { timeout: 20000 });
   return data?.data?.response || null;
+}
+
+// Panggil Ai4Chat & PublicAI BERSAMAAN, pakai jawaban siapa pun yang datang duluan.
+// Ini mempercepat respons secara signifikan dibanding menunggu Ai4Chat gagal dulu
+// baru mencoba PublicAI (pola lama, sekuensial).
+function askFastest(question) {
+  return new Promise((resolve, reject) => {
+    const sources = [
+      { name: "Ai4Chat", fn: () => Ai4Chat(question) },
+      { name: "PublicAI", fn: () => askPublicAI(question) },
+    ];
+
+    let resolved = false;
+    let settledCount = 0;
+
+    sources.forEach(({ name, fn }) => {
+      fn()
+        .then((result) => {
+          if (!resolved && result) {
+            resolved = true;
+            resolve(result);
+          }
+        })
+        .catch((err) => {
+          console.error(`[FaiWand] ${name} gagal:`, err.response?.status || "", err.message);
+        })
+        .finally(() => {
+          settledCount++;
+          if (settledCount === sources.length && !resolved) {
+            reject(new Error("Semua sumber AI (Ai4Chat & PublicAI) sedang tidak merespons."));
+          }
+        });
+    });
+  });
 }
 
 const PORT = process.env.WHISPER_PORT || 4000;
@@ -48,6 +83,35 @@ function cleanForTTS(text) {
     .slice(0, 1000);
 }
 
+// Nama suara neural Microsoft Edge (kualitas jauh lebih natural dari Google TTS)
+const EDGE_VOICES = {
+  id: "id-ID-ArdiNeural",         // pria Indonesia
+  "id-female": "id-ID-GadisNeural", // wanita Indonesia
+  en: "en-US-AriaNeural",         // wanita Inggris
+};
+
+// TTS utama — Microsoft Edge Neural Voice, suara sangat natural, gratis tanpa API key.
+// Tidak perlu chunking manual: Edge TTS menangani teks panjang dalam satu koneksi.
+async function edgeTextToSpeech(text, voiceName) {
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+  const { audioStream } = tts.toStream(text);
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    audioStream.on("data", (chunk) => chunks.push(chunk));
+    audioStream.on("close", () => {
+      tts.close();
+      resolve(Buffer.concat(chunks));
+    });
+    audioStream.on("error", (err) => {
+      tts.close();
+      reject(err);
+    });
+  });
+}
+
 // Pecah teks jadi potongan <=200 karakter di batas kata (limit Google Translate TTS)
 function splitIntoChunks(text, maxLen = 200) {
   const chunks = [];
@@ -68,8 +132,7 @@ function splitIntoChunks(text, maxLen = 200) {
   return chunks;
 }
 
-// TTS via Google Translate (gratis, tanpa API key, terbukti jalan — dipakai juga oleh .tts command)
-// lang: "id" untuk Indonesia, "en" untuk Inggris
+// TTS via Google Translate (gratis, tanpa API key) — fallback bila Edge TTS gagal
 async function fetchGoogleTTSChunk(text, lang = "id") {
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
   const { data } = await axios.get(url, {
@@ -80,31 +143,36 @@ async function fetchGoogleTTSChunk(text, lang = "id") {
   return Buffer.from(data);
 }
 
-// TTS teks panjang: pecah jadi beberapa potongan, gabung jadi satu buffer mp3
-async function textToSpeech(text, voice = "id") {
-  const lang = voice === "en" || voice === "Brian" ? "en" : "id";
-  const chunks = splitIntoChunks(text, 200);
-
-  const buffers = [];
-  for (const chunk of chunks) {
-    if (!chunk) continue;
-    const buf = await fetchGoogleTTSChunk(chunk, lang);
-    buffers.push(buf);
-  }
-
+// Fallback: pecah jadi beberapa potongan, ambil paralel, gabung jadi satu buffer mp3
+async function googleTTSFallback(text, lang = "id") {
+  const chunks = splitIntoChunks(text, 200).filter(Boolean);
+  const buffers = await Promise.all(chunks.map((chunk) => fetchGoogleTTSChunk(chunk, lang)));
   return Buffer.concat(buffers);
+}
+
+// Fungsi utama: coba Edge Neural TTS dulu (natural), fallback ke Google TTS kalau gagal
+async function textToSpeech(text, voice = "id") {
+  const voiceName = EDGE_VOICES[voice] || EDGE_VOICES.id;
+  const fallbackLang = voice === "en" ? "en" : "id";
+
+  try {
+    return await edgeTextToSpeech(text, voiceName);
+  } catch (err) {
+    console.error("[FaiWand] Edge TTS gagal, fallback ke Google TTS:", err.message);
+    return await googleTTSFallback(text, fallbackLang);
+  }
 }
 
 // ---- GET /api/health ----
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", ai: "Ai4Chat + PublicAI (tanpa API key)", tts: "Google Translate TTS (tanpa API key)" });
+  res.json({ status: "ok", ai: "Ai4Chat + PublicAI (tanpa API key)", tts: "Microsoft Edge Neural TTS + Google TTS fallback (tanpa API key)" });
 });
 
 // ---- POST /api/chat ----
 // Body JSON: { question: "...", voice: "id-ID-ArdiNeural" }
 // Response: audio/mpeg langsung
 app.post("/api/chat", async (req, res) => {
-  const { question, voice = "id-ID-ArdiNeural" } = req.body || {};
+  const { question, voice = "id" } = req.body || {};
 
   if (!question?.trim()) {
     return res.status(400).json({ ok: false, error: "Field 'question' wajib diisi." });
@@ -112,31 +180,22 @@ app.post("/api/chat", async (req, res) => {
 
   console.log(`[FaiWand] Pertanyaan: "${question}"`);
 
-  // Step 1: tanya AI (Ai4Chat, fallback ke PublicAI)
-  let answer = null;
+  // Step 1: tanya AI — Ai4Chat & PublicAI dipanggil bersamaan, pakai yang tercepat
+  const startAI = Date.now();
+  let answer;
   try {
-    answer = await Ai4Chat(question);
+    answer = await askFastest(question);
   } catch (err) {
-    console.error("[FaiWand] Ai4Chat gagal:", err.response?.status || "", err.message);
+    return res.status(502).json({ ok: false, error: err.message });
   }
 
-  if (!answer) {
-    try {
-      answer = await askPublicAI(question);
-    } catch (err) {
-      console.error("[FaiWand] PublicAI fallback gagal:", err.response?.status || "", err.message);
-    }
-  }
-
-  if (!answer) {
-    return res.status(502).json({ ok: false, error: "Semua sumber AI (Ai4Chat & PublicAI) sedang tidak merespons." });
-  }
-
-  console.log(`[FaiWand] Jawaban: "${answer.slice(0, 80)}..."`);
+  console.log(`[FaiWand] Jawaban (${Date.now() - startAI}ms): "${answer.slice(0, 80)}..."`);
 
   // Step 2: jawaban → audio (TTS)
+  const startTTS = Date.now();
   try {
     const audioBuffer = await textToSpeech(cleanForTTS(answer), voice);
+    console.log(`[FaiWand] Audio siap (${Date.now() - startTTS}ms, ${Math.round(audioBuffer.length / 1024)} KB)`);
 
     res.set({
       "Content-Type": "audio/mpeg",
@@ -185,7 +244,8 @@ app.get("/", (req, res) => {
   <div class="status" id="status">Klik mic dan mulai bicara</div>
 
   <select id="voiceSelect">
-    <option value="id">Suara Indonesia</option>
+    <option value="id">Suara Pria Indonesia</option>
+    <option value="id-female">Suara Wanita Indonesia</option>
     <option value="en">Suara Inggris</option>
   </select>
 
