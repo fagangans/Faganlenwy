@@ -15,6 +15,13 @@ import express from "express";
 import axios from "axios";
 import Ai4Chat from "./WhatsApp/scrape/Ai4Chat.js";
 
+// Fallback AI kalau Ai4Chat down (dipakai juga oleh ai4chat.js di bot WhatsApp)
+async function askPublicAI(q) {
+  const url = `https://api.fromscratch.web.id/v1/api/ai/publicai?query=${encodeURIComponent(q)}`;
+  const { data } = await axios.get(url, { timeout: 20000 });
+  return data?.data?.response || null;
+}
+
 const PORT = process.env.WHISPER_PORT || 4000;
 const app = express();
 app.use(express.json());
@@ -38,23 +45,59 @@ function cleanForTTS(text) {
     .replace(/[➤•►→━]/g, "")
     .replace(/\n{3,}/g, "\n")
     .trim()
-    .slice(0, 800);
+    .slice(0, 1000);
 }
 
-// TTS via StreamElements (gratis, tanpa API key)
-async function textToSpeech(text, voice = "id-ID-ArdiNeural") {
-  const url = `https://api.streamelements.com/kappa/v2/speech?voice=${voice}&text=${encodeURIComponent(text)}`;
+// Pecah teks jadi potongan <=200 karakter di batas kata (limit Google Translate TTS)
+function splitIntoChunks(text, maxLen = 200) {
+  const chunks = [];
+  let remaining = text.trim();
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+    let cut = remaining.slice(0, maxLen);
+    const lastBreak = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf(", "), cut.lastIndexOf(" "));
+    if (lastBreak > 0) cut = remaining.slice(0, lastBreak + 1);
+    chunks.push(cut.trim());
+    remaining = remaining.slice(cut.length).trim();
+  }
+
+  return chunks;
+}
+
+// TTS via Google Translate (gratis, tanpa API key, terbukti jalan — dipakai juga oleh .tts command)
+// lang: "id" untuk Indonesia, "en" untuk Inggris
+async function fetchGoogleTTSChunk(text, lang = "id") {
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
   const { data } = await axios.get(url, {
     responseType: "arraybuffer",
-    timeout: 20000,
+    timeout: 15000,
     headers: { "User-Agent": "Mozilla/5.0" },
   });
   return Buffer.from(data);
 }
 
+// TTS teks panjang: pecah jadi beberapa potongan, gabung jadi satu buffer mp3
+async function textToSpeech(text, voice = "id") {
+  const lang = voice === "en" || voice === "Brian" ? "en" : "id";
+  const chunks = splitIntoChunks(text, 200);
+
+  const buffers = [];
+  for (const chunk of chunks) {
+    if (!chunk) continue;
+    const buf = await fetchGoogleTTSChunk(chunk, lang);
+    buffers.push(buf);
+  }
+
+  return Buffer.concat(buffers);
+}
+
 // ---- GET /api/health ----
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", ai: "Ai4Chat (tanpa API key)", tts: "StreamElements (tanpa API key)" });
+  res.json({ status: "ok", ai: "Ai4Chat + PublicAI (tanpa API key)", tts: "Google Translate TTS (tanpa API key)" });
 });
 
 // ---- POST /api/chat ----
@@ -69,14 +112,30 @@ app.post("/api/chat", async (req, res) => {
 
   console.log(`[FaiWand] Pertanyaan: "${question}"`);
 
+  // Step 1: tanya AI (Ai4Chat, fallback ke PublicAI)
+  let answer = null;
   try {
-    // Ai4Chat jawab pertanyaan
-    const answer = await Ai4Chat(question);
-    if (!answer) return res.status(502).json({ ok: false, error: "Ai4Chat tidak merespons." });
+    answer = await Ai4Chat(question);
+  } catch (err) {
+    console.error("[FaiWand] Ai4Chat gagal:", err.response?.status || "", err.message);
+  }
 
-    console.log(`[FaiWand] Jawaban: "${answer.slice(0, 80)}..."`);
+  if (!answer) {
+    try {
+      answer = await askPublicAI(question);
+    } catch (err) {
+      console.error("[FaiWand] PublicAI fallback gagal:", err.response?.status || "", err.message);
+    }
+  }
 
-    // Jawaban → audio
+  if (!answer) {
+    return res.status(502).json({ ok: false, error: "Semua sumber AI (Ai4Chat & PublicAI) sedang tidak merespons." });
+  }
+
+  console.log(`[FaiWand] Jawaban: "${answer.slice(0, 80)}..."`);
+
+  // Step 2: jawaban → audio (TTS)
+  try {
     const audioBuffer = await textToSpeech(cleanForTTS(answer), voice);
 
     res.set({
@@ -84,10 +143,9 @@ app.post("/api/chat", async (req, res) => {
       "X-Answer": encodeURIComponent(answer.slice(0, 300)),
     });
     res.send(audioBuffer);
-
   } catch (err) {
-    console.error("[FaiWand] Error:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[FaiWand] TTS gagal:", err.response?.status || "", err.message);
+    res.status(500).json({ ok: false, error: "Gagal membuat suara (TTS): " + err.message });
   }
 });
 
@@ -127,9 +185,8 @@ app.get("/", (req, res) => {
   <div class="status" id="status">Klik mic dan mulai bicara</div>
 
   <select id="voiceSelect">
-    <option value="id-ID-ArdiNeural">Suara Pria Indonesia</option>
-    <option value="id-ID-GadisNeural">Suara Wanita Indonesia</option>
-    <option value="Brian">Suara Inggris</option>
+    <option value="id">Suara Indonesia</option>
+    <option value="en">Suara Inggris</option>
   </select>
 
   <audio id="player" controls></audio>
