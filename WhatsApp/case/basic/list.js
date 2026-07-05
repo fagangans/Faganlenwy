@@ -28,6 +28,7 @@ export default async function handler(leni) {
     `🤖 *AI (Kecerdasan Buatan)*\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `➤ .ai [pertanyaan] — Tanya AI apapun\n` +
+    `➤ .aisuara [pertanyaan] — Tanya AI, jawaban dikirim teks + voice note\n` +
     `➤ .resetai — Reset memori percakapan AI\n` +
     `➤ .imagine [deskripsi] — Generate gambar dari teks dengan AI\n` +
     `➤ .imagine list — Lihat semua gaya (anime, realis, 3d, dll)\n` +
