@@ -5,15 +5,18 @@
 //  Port:      WHISPER_PORT di .env (default 4000)
 //
 //  Endpoint:
+//    POST /api/voice-chat   — kirim audio → Ai4Chat → jawab dengan audio (FaiWand)
 //    POST /api/transcribe   — upload file audio/video, dapat transkripsi + timestamp
 //    GET  /api/health       — cek status server
-//    GET  /                 — halaman test upload (browser)
+//    GET  /                 — halaman test voice chat (browser)
 // =====================================================================
 
 import "dotenv/config";
 import express from "express";
 import multer from "multer";
+import axios from "axios";
 import { transcribeAudio } from "./WhatsApp/scrape/GeminiWhisper.js";
+import Ai4Chat from "./WhatsApp/scrape/Ai4Chat.js";
 
 const PORT = process.env.WHISPER_PORT || 4000;
 const app = express();
@@ -94,6 +97,85 @@ app.post("/api/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
+// ---- helper: bersihkan markdown WhatsApp sebelum TTS ----
+function cleanForTTS(text) {
+  return text
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`(.*?)`/g, "$1")
+    .replace(/[➤•►→━]/g, "")
+    .replace(/\n{3,}/g, "\n")
+    .trim()
+    .slice(0, 800); // batas aman TTS
+}
+
+// ---- helper: TTS via StreamElements (gratis, support bahasa Indonesia) ----
+async function textToSpeech(text, voice = "id-ID-ArdiNeural") {
+  const url = `https://api.streamelements.com/kappa/v2/speech?voice=${voice}&text=${encodeURIComponent(text)}`;
+  const { data } = await axios.get(url, {
+    responseType: "arraybuffer",
+    timeout: 20000,
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  return Buffer.from(data);
+}
+
+// ---- POST /api/voice-chat ----
+// Kirim audio → transkripsi → Ai4Chat → jawaban audio
+// Body: multipart/form-data
+//   file  — file audio pertanyaan (mp3/wav/ogg/webm/m4a)
+//   voice — (opsional) suara TTS: id-ID-ArdiNeural (pria,default) / id-ID-GadisNeural (wanita) / Brian (en)
+//
+// Response: audio/mpeg (file suara jawaban AI langsung bisa diputar)
+app.post("/api/voice-chat", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ ok: false, error: "Tidak ada file audio. Gunakan field 'file'." });
+  }
+
+  const voice = req.body?.voice || "id-ID-ArdiNeural";
+  const mimeType = req.file.mimetype || "audio/mpeg";
+
+  console.log(`[VoiceChat] Audio masuk: ${req.file.originalname} (${Math.round(req.file.size / 1024)} KB)`);
+
+  try {
+    // Step 1: Audio → teks (Gemini Whisper)
+    const transcription = await transcribeAudio(req.file.buffer, mimeType);
+    const question = transcription.full_text?.trim();
+
+    if (!question) {
+      return res.status(422).json({ ok: false, error: "Tidak dapat mendeteksi suara dalam audio." });
+    }
+
+    console.log(`[VoiceChat] Pertanyaan: "${question}"`);
+
+    // Step 2: Teks → jawaban AI (Ai4Chat)
+    const answer = await Ai4Chat(question);
+
+    if (!answer) {
+      return res.status(502).json({ ok: false, error: "Ai4Chat tidak merespons." });
+    }
+
+    console.log(`[VoiceChat] Jawaban AI: "${answer.slice(0, 80)}..."`);
+
+    // Step 3: Jawaban → audio (TTS)
+    const audioBuffer = await textToSpeech(cleanForTTS(answer), voice);
+
+    // Kembalikan langsung file audio agar bisa diputar/disimpan
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Content-Disposition": "inline; filename=answer.mp3",
+      "X-Question": encodeURIComponent(question),
+      "X-Answer": encodeURIComponent(answer.slice(0, 200)),
+    });
+    res.send(audioBuffer);
+
+  } catch (err) {
+    console.error("[VoiceChat] Error:", err.message);
+    res.status(500).json({ ok: false, error: err.message || "Gagal memproses voice chat." });
+  }
+});
+
 // ---- GET / — halaman test sederhana di browser ----
 app.get("/", (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -122,55 +204,121 @@ app.get("/", (req, res) => {
 </head>
 <body>
 <div class="card">
-  <h1>🎙️ Lenwy Whisper AI</h1>
-  <p>Transkripsi audio/video menggunakan Gemini AI · Max 200 MB</p>
+  <h1>🎙️ FaiWand Voice AI</h1>
+  <p>Bicara → AI dengar → AI jawab dengan suara · Powered by Ai4Chat + Gemini</p>
 
-  <label>Pilih file audio atau video:</label>
-  <input type="file" id="fileInput" accept="audio/*,video/*">
-  <button id="btn" onclick="transcribe()">Mulai Transkripsi</button>
-  <div id="status"></div>
-  <div id="result"></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button id="btnRec" onclick="toggleRecord()" style="flex:1;background:#dc2626;">⏺ Rekam Suara</button>
+    <button id="btnSend" onclick="sendVoice()" style="flex:1;" disabled>📤 Kirim ke AI</button>
+  </div>
+
+  <div style="margin-bottom:12px;">
+    <label>Atau upload file audio:</label>
+    <input type="file" id="fileInput" accept="audio/*">
+  </div>
+
+  <label>Suara jawaban AI:</label>
+  <select id="voiceSelect" style="width:100%;padding:8px;background:#111;color:#ccc;border:1px solid #444;border-radius:8px;margin-bottom:16px;">
+    <option value="id-ID-ArdiNeural">Pria Indonesia (default)</option>
+    <option value="id-ID-GadisNeural">Wanita Indonesia</option>
+    <option value="Brian">Pria Inggris</option>
+  </select>
+
+  <div id="status" style="margin-bottom:12px;"></div>
+  <audio id="audioPlayer" controls style="width:100%;display:none;margin-top:8px;"></audio>
+  <div id="transcript" style="margin-top:12px;font-size:0.82rem;color:#888;display:none;"></div>
 </div>
 
 <script>
-async function transcribe() {
-  const file = document.getElementById('fileInput').files[0];
-  if (!file) return alert('Pilih file dulu!');
+let mediaRecorder, audioChunks = [], audioBlob = null;
 
-  const btn = document.getElementById('btn');
+async function toggleRecord() {
+  const btn = document.getElementById('btnRec');
+  const btnSend = document.getElementById('btnSend');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    btn.textContent = '⏺ Rekam Suara';
+    btn.style.background = '#dc2626';
+    return;
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  mediaRecorder.onstop = () => {
+    audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    btnSend.disabled = false;
+    document.getElementById('status').textContent = '✅ Rekaman siap · Klik "Kirim ke AI"';
+    stream.getTracks().forEach(t => t.stop());
+  };
+  mediaRecorder.start();
+  btn.textContent = '⏹ Stop Rekam';
+  btn.style.background = '#16a34a';
+  document.getElementById('status').textContent = '🔴 Merekam... klik Stop jika selesai';
+  btnSend.disabled = true;
+}
+
+async function sendVoice() {
+  const fileInput = document.getElementById('fileInput').files[0];
+  const blob = fileInput || audioBlob;
+  if (!blob) return alert('Rekam suara atau pilih file audio dulu!');
+
+  const voice = document.getElementById('voiceSelect').value;
   const status = document.getElementById('status');
-  const result = document.getElementById('result');
+  const player = document.getElementById('audioPlayer');
+  const transcript = document.getElementById('transcript');
 
-  btn.disabled = true;
-  result.style.display = 'none';
-  status.textContent = '⏳ Mengunggah dan memproses... (mungkin 30-120 detik untuk file panjang)';
+  document.getElementById('btnSend').disabled = true;
+  player.style.display = 'none';
+  transcript.style.display = 'none';
+  status.textContent = '⏳ AI sedang mendengar dan berpikir... (5-20 detik)';
 
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', blob, 'voice.webm');
+  form.append('voice', voice);
 
   try {
-    const res = await fetch('/api/transcribe', { method: 'POST', body: form });
-    const data = await res.json();
+    const res = await fetch('/api/voice-chat', { method: 'POST', body: form });
 
-    if (!data.ok) throw new Error(data.error);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Server error');
+    }
 
-    status.textContent = \`✅ Selesai · \${data.segments?.length || 0} segment · Bahasa: \${data.language} · Durasi: \${data.duration ? data.duration.toFixed(1) + 's' : 'N/A'}\`;
+    const question = decodeURIComponent(res.headers.get('X-Question') || '');
+    const answer = decodeURIComponent(res.headers.get('X-Answer') || '');
 
-    let html = \`<div class="full">\${data.full_text}</div>\`;
-    (data.segments || []).forEach(s => {
-      const start = s.start?.toFixed(1) ?? '?';
-      const end = s.end?.toFixed(1) ?? '?';
-      html += \`<div class="seg"><div class="time">\${start}s — \${end}s</div><div class="text">\${s.text}</div></div>\`;
-    });
+    const audioData = await res.arrayBuffer();
+    const audioUrl = URL.createObjectURL(new Blob([audioData], { type: 'audio/mpeg' }));
 
-    result.innerHTML = html;
-    result.style.display = 'block';
+    player.src = audioUrl;
+    player.style.display = 'block';
+    player.play();
+
+    status.textContent = '✅ AI sudah menjawab!';
+    if (question || answer) {
+      transcript.innerHTML = \`<b>Pertanyaan:</b> \${question}<br><b>Jawaban:</b> \${answer}\${answer.length >= 200 ? '...' : ''}\`;
+      transcript.style.display = 'block';
+    }
   } catch (err) {
     status.textContent = '❌ Error: ' + err.message;
   } finally {
-    btn.disabled = false;
+    document.getElementById('btnSend').disabled = false;
   }
 }
+
+// Kirim juga kalau pilih file manual
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('fileInput').addEventListener('change', e => {
+    if (e.target.files[0]) {
+      audioBlob = null;
+      document.getElementById('btnSend').disabled = false;
+      document.getElementById('status').textContent = \`File dipilih: \${e.target.files[0].name}\`;
+    }
+  });
+});
 </script>
 </body>
 </html>`);
@@ -185,7 +333,8 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🎙️  Lenwy Whisper Server jalan di http://localhost:${PORT}`);
+  console.log(`\n🎙️  FaiWand Voice AI Server jalan di http://localhost:${PORT}`);
+  console.log(`🤖  POST http://localhost:${PORT}/api/voice-chat  ← audio in, audio out`);
   console.log(`📡  POST http://localhost:${PORT}/api/transcribe`);
   console.log(`🔍  GET  http://localhost:${PORT}/api/health`);
   if (!process.env.GEMINI_API_KEY) {
