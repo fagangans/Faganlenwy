@@ -13,18 +13,28 @@
 
 import "dotenv/config";
 import express from "express";
+import multer from "multer";
 import { askFastest, cleanForTTS, textToSpeech } from "../WhatsApp/lib/voiceAI.js";
+import { analyzeFile } from "../WhatsApp/lib/geminiFile.js";
 import { openApp, controlVolume, getSystemStats } from "./systemControl.js";
+import { searchFiles } from "./fileSearch.js";
 import { parseCommand } from "./commandRouter.js";
+import { getHistory, addMessage, getLastDocument, setLastDocument } from "./memory.js";
 
 const PORT = process.env.FAIPOUCH_PORT || 5000;
 const app = express();
 app.use(express.json());
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB, sama seperti batas Gemini inline
+});
+
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Expose-Headers", "X-Answer, X-Type, X-Reminder-Delay, X-Reminder-Message");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -61,6 +71,16 @@ async function handleSystemCommand(cmd) {
       const s = await getSystemStats();
       return `CPU sedang di ${s.cpuLoad} persen, RAM terpakai ${s.usedMemGB} dari ${s.totalMemGB} gigabyte, sekitar ${s.memPercent} persen. Sistem sudah menyala ${s.uptimeMin} menit.`;
     }
+    case "search_file": {
+      const results = searchFiles(cmd.payload);
+      if (!results.length) return `Tidak ketemu file yang mengandung "${cmd.payload}" di folder Documents, Downloads, atau Desktop.`;
+      const names = results.map((p) => p.split(/[\\/]/).pop());
+      return `Ketemu ${results.length} file: ${names.join(", ")}.`;
+    }
+    case "reminder": {
+      const { amount, unit } = cmd.payload;
+      return `Baik, saya akan ingatkan dalam ${amount} ${unit}.`;
+    }
     default:
       return null;
   }
@@ -81,18 +101,36 @@ app.post("/api/jarvis", async (req, res) => {
   const cmd = parseCommand(question);
   let answer;
 
-  if (cmd.type !== "chat") {
+  if (cmd.type === "screenshot_analyze") {
+    // Screenshot cuma bisa diambil dari browser (getDisplayMedia) — server cuma
+    // kasih tahu client untuk memicu capture, analisisnya terjadi di /api/screenshot.
+    answer = "Baik, saya lihat layarnya sekarang.";
+  } else if (cmd.type !== "chat") {
     // Perintah sistem — eksekusi langsung, tidak lewat AI
     console.log(`[Faipouch] Terdeteksi perintah: ${cmd.type}`);
     answer = await handleSystemCommand(cmd);
   } else {
-    // Obrolan biasa — teruskan ke AI
+    // Obrolan biasa — teruskan ke AI, dengan konteks memori persisten + dokumen terakhir
     const startAI = Date.now();
+    const history = getHistory();
+    const lastDoc = getLastDocument();
+
+    let context = "";
+    if (history.length) {
+      context = "\n\nRiwayat percakapan sebelumnya:\n" +
+        history.map((h) => `${h.role === "user" ? "User" : "Kamu"}: ${h.text}`).join("\n") + "\n\n";
+    }
+    if (lastDoc) {
+      context += `Dokumen yang baru saja di-upload user ("${lastDoc.fileName}"):\n${lastDoc.summary}\n\n`;
+    }
+
     try {
-      answer = await askFastest(question);
+      answer = await askFastest(context + question);
     } catch (err) {
       return res.status(502).json({ ok: false, error: err.message });
     }
+    addMessage("user", question);
+    addMessage("assistant", answer);
     console.log(`[Faipouch] Jawaban AI (${Date.now() - startAI}ms)`);
   }
 
@@ -101,15 +139,103 @@ app.post("/api/jarvis", async (req, res) => {
   try {
     const audioBuffer = await textToSpeech(cleanForTTS(answer), voice, rate);
 
-    res.set({
+    const headers = {
       "Content-Type": "audio/mpeg",
       "X-Answer": encodeURIComponent(answer.slice(0, 500)),
       "X-Type": cmd.type,
-    });
+    };
+
+    if (cmd.type === "reminder") {
+      headers["X-Reminder-Delay"] = String(cmd.payload.delayMs);
+      headers["X-Reminder-Message"] = encodeURIComponent(cmd.payload.message);
+    }
+
+    res.set(headers);
     res.send(audioBuffer);
   } catch (err) {
     console.error("[Faipouch] TTS gagal:", err.message);
     res.status(500).json({ ok: false, error: "Gagal membuat suara: " + err.message });
+  }
+});
+
+// ---- POST /api/speak — teks langsung jadi audio, TANPA lewat AI ----
+// Dipakai untuk baca clipboard verbatim & bunyikan reminder saat waktunya tiba.
+// Body JSON: { text: "...", voice: "id", rate: "+15%" }
+app.post("/api/speak", async (req, res) => {
+  const { text, voice = "id", rate = "+15%" } = req.body || {};
+
+  if (!text?.trim()) {
+    return res.status(400).json({ ok: false, error: "Field 'text' wajib diisi." });
+  }
+
+  try {
+    const audioBuffer = await textToSpeech(cleanForTTS(text), voice, rate);
+    res.set({ "Content-Type": "audio/mpeg", "X-Answer": encodeURIComponent(text.slice(0, 500)) });
+    res.send(audioBuffer);
+  } catch (err) {
+    console.error("[Faipouch] Speak gagal:", err.message);
+    res.status(500).json({ ok: false, error: "Gagal membuat suara: " + err.message });
+  }
+});
+
+// ---- POST /api/screenshot — gambar layar (dari getDisplayMedia) → dianalisis Gemini Vision ----
+app.post("/api/screenshot", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: "Tidak ada gambar yang dikirim." });
+
+  const { voice = "id", rate = "+15%" } = req.body || {};
+
+  try {
+    const description = await analyzeFile(
+      req.file.buffer,
+      req.file.mimetype || "image/png",
+      "Jelaskan apa yang terlihat di screenshot ini secara singkat dan natural dalam Bahasa Indonesia, seolah kamu asisten yang sedang melihat layar user. Fokus ke hal yang paling relevan/menonjol, maksimal 4 kalimat."
+    );
+
+    if (!description) return res.status(502).json({ ok: false, error: "Gemini tidak memberikan hasil analisis." });
+
+    addMessage("user", "[Screenshot layar]");
+    addMessage("assistant", description);
+
+    const audioBuffer = await textToSpeech(cleanForTTS(description), voice, rate);
+    res.set({ "Content-Type": "audio/mpeg", "X-Answer": encodeURIComponent(description.slice(0, 500)) });
+    res.send(audioBuffer);
+  } catch (err) {
+    console.error("[Faipouch] Screenshot analysis gagal:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ---- POST /api/upload — PDF/gambar/dokumen → diringkas Gemini, disimpan sebagai konteks ----
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: "Tidak ada file yang di-upload." });
+
+  const { voice = "id", rate = "+15%" } = req.body || {};
+  const fileName = req.file.originalname || "dokumen";
+  const mimeType = req.file.mimetype || "application/octet-stream";
+
+  console.log(`[Faipouch] Upload: ${fileName} (${mimeType}, ${Math.round(req.file.size / 1024)} KB)`);
+
+  try {
+    const summary = await analyzeFile(
+      req.file.buffer,
+      mimeType,
+      "Ringkas isi dokumen/file ini dalam Bahasa Indonesia secara jelas dan padat (maksimal 6 kalimat), supaya bisa dipakai sebagai konteks untuk menjawab pertanyaan lanjutan tentang dokumen ini."
+    );
+
+    if (!summary) return res.status(502).json({ ok: false, error: "Gemini tidak bisa membaca file ini." });
+
+    setLastDocument(fileName, summary);
+
+    const spoken = `File "${fileName}" sudah saya baca. ${summary}`;
+    addMessage("user", `[Upload file: ${fileName}]`);
+    addMessage("assistant", spoken);
+
+    const audioBuffer = await textToSpeech(cleanForTTS(spoken), voice, rate);
+    res.set({ "Content-Type": "audio/mpeg", "X-Answer": encodeURIComponent(spoken.slice(0, 500)) });
+    res.send(audioBuffer);
+  } catch (err) {
+    console.error("[Faipouch] Upload analysis gagal:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -233,7 +359,9 @@ const HTML_PAGE = `<!DOCTYPE html>
 
   select, input[type=range] { background: rgba(0,20,26,0.6); color: #7ee8ff; border: 1px solid #0d5f73; border-radius: 6px; padding: 8px; font-size: 0.8rem; }
   input[type=checkbox] { width: 18px; height: 18px; accent-color: #00d9ff; }
-  button { width: 100%; padding: 9px; background: rgba(0,217,255,0.12); color: #7ee8ff; border: 1px solid #0d5f73; border-radius: 6px; font-size: 0.78rem; cursor: pointer; transition: background .2s; }
+  input[type=file] { width: 100%; font-size: 0.7rem; color: #7ee8ff; background: rgba(0,20,26,0.6); border: 1px dashed #0d5f73; border-radius: 6px; padding: 8px; }
+  .feature-hint { font-size: 0.65rem; color: #4a9bb0; margin-top: 6px; line-height: 1.4; }
+  button { width: 100%; padding: 9px; background: rgba(0,217,255,0.12); color: #7ee8ff; border: 1px solid #0d5f73; border-radius: 6px; font-size: 0.78rem; cursor: pointer; transition: background .2s; margin-top: 8px; }
   button:hover { background: rgba(0,217,255,0.25); }
 
   audio { display: none; }
@@ -440,6 +568,22 @@ const HTML_PAGE = `<!DOCTYPE html>
     <div class="setting-group">
       <button onclick="clearTranscript()">Bersihkan Log</button>
     </div>
+
+    <h3 style="margin-top: 8px;">Fitur</h3>
+
+    <div class="setting-group">
+      <label>Upload Dokumen (PDF/Gambar)</label>
+      <input type="file" id="fileInput" accept=".pdf,image/*,.txt,.doc,.docx" onchange="uploadFile()">
+      <div class="feature-hint" id="uploadHint">Tanya AI setelah upload, mis. "apa isi dokumennya?"</div>
+    </div>
+
+    <div class="setting-group">
+      <button onclick="captureScreenshot()">📷 Lihat Layar (Screenshot)</button>
+    </div>
+
+    <div class="setting-group">
+      <button onclick="readClipboard()">📋 Bacakan Clipboard</button>
+    </div>
   </aside>
 </div>
 
@@ -526,17 +670,151 @@ async function askJarvis(question) {
     if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Server error'); }
 
     const answerText = decodeURIComponent(res.headers.get('X-Answer') || '');
+    const type = res.headers.get('X-Type');
     addTranscript('ai', answerText);
 
     const blob = await res.blob();
     player.src = URL.createObjectURL(blob);
     player.play();
 
+    if (type === 'reminder') {
+      const delayMs = parseInt(res.headers.get('X-Reminder-Delay') || '0', 10);
+      const message = decodeURIComponent(res.headers.get('X-Reminder-Message') || 'waktunya!');
+      if (delayMs > 0) scheduleReminder(delayMs, message);
+    }
+
+    if (type === 'screenshot_analyze') {
+      player.addEventListener('ended', () => captureScreenshot(), { once: true });
+    }
+
     setStatus('✅ Klik core untuk bicara lagi');
   } catch (err) {
     setStatus('❌ ' + err.message, true);
   } finally {
     resetCore();
+  }
+}
+
+// Jadwalkan reminder — timer berjalan di browser, bunyi lewat /api/speak saat waktunya tiba.
+// Catatan: tab Faipouch harus tetap terbuka supaya reminder ini bunyi.
+function scheduleReminder(delayMs, message) {
+  addTranscript('ai', '⏰ Reminder dijadwalkan: "' + message + '" dalam ' + Math.round(delayMs / 1000) + ' detik.');
+  setTimeout(async () => {
+    addTranscript('ai', '⏰ ' + message);
+    await speakText('Waktunya! ' + message);
+  }, delayMs);
+}
+
+// Bunyikan teks langsung tanpa lewat AI (dipakai reminder & baca clipboard)
+async function speakText(text) {
+  const voice = document.getElementById('voiceSelect').value;
+  const rate = '+' + document.getElementById('rateSlider').value + '%';
+  const player = document.getElementById('player');
+
+  const res = await fetch('/api/speak', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice, rate })
+  });
+
+  if (!res.ok) return;
+  const blob = await res.blob();
+  player.src = URL.createObjectURL(blob);
+  player.play();
+}
+
+// Baca isi clipboard dengan suara (butuh izin browser saat pertama kali dipakai)
+async function readClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text?.trim()) { setStatus('📋 Clipboard kosong.', true); return; }
+    addTranscript('you', '[Baca clipboard]');
+    addTranscript('ai', text.slice(0, 300));
+    await speakText(text);
+  } catch (err) {
+    setStatus('❌ Tidak bisa akses clipboard: ' + err.message, true);
+  }
+}
+
+// Ambil screenshot layar (browser akan minta izin pilih layar/window) lalu kirim ke AI Vision
+async function captureScreenshot() {
+  setStatus('📷 Pilih layar/jendela yang mau di-screenshot...');
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    const track = stream.getVideoTracks()[0];
+    const capture = new ImageCapture(track);
+    const bitmap = await capture.grabFrame();
+    track.stop();
+
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+
+    setCoreState('thinking');
+    setStatus('⚡ Menganalisis layar...');
+
+    canvas.toBlob(async (blob) => {
+      const form = new FormData();
+      form.append('file', blob, 'screenshot.png');
+      form.append('voice', document.getElementById('voiceSelect').value);
+      form.append('rate', '+' + document.getElementById('rateSlider').value + '%');
+
+      const res = await fetch('/api/screenshot', { method: 'POST', body: form });
+      resetCore();
+
+      if (!res.ok) { const err = await res.json(); setStatus('❌ ' + err.error, true); return; }
+
+      const answerText = decodeURIComponent(res.headers.get('X-Answer') || '');
+      addTranscript('you', '[Screenshot]');
+      addTranscript('ai', answerText);
+
+      const audioBlob = await res.blob();
+      const player = document.getElementById('player');
+      player.src = URL.createObjectURL(audioBlob);
+      player.play();
+      setStatus('✅ Klik core untuk bicara lagi');
+    }, 'image/png');
+  } catch (err) {
+    resetCore();
+    setStatus('❌ Screenshot dibatalkan atau gagal: ' + err.message, true);
+  }
+}
+
+// Upload dokumen (PDF/gambar/dll), diringkas AI dan disimpan sebagai konteks obrolan
+async function uploadFile() {
+  const input = document.getElementById('fileInput');
+  const file = input.files[0];
+  if (!file) return;
+
+  setCoreState('thinking');
+  setStatus('⚡ Membaca "' + file.name + '"...');
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('voice', document.getElementById('voiceSelect').value);
+  form.append('rate', '+' + document.getElementById('rateSlider').value + '%');
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    resetCore();
+
+    if (!res.ok) { const err = await res.json(); setStatus('❌ ' + err.error, true); return; }
+
+    const answerText = decodeURIComponent(res.headers.get('X-Answer') || '');
+    addTranscript('you', '[Upload: ' + file.name + ']');
+    addTranscript('ai', answerText);
+
+    const audioBlob = await res.blob();
+    const player = document.getElementById('player');
+    player.src = URL.createObjectURL(audioBlob);
+    player.play();
+    setStatus('✅ Dokumen siap ditanya. Klik core untuk bertanya.');
+  } catch (err) {
+    resetCore();
+    setStatus('❌ Upload gagal: ' + err.message, true);
+  } finally {
+    input.value = '';
   }
 }
 
