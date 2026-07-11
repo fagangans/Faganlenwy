@@ -143,29 +143,30 @@ const HTML_PAGE = `<!DOCTYPE html>
   .title { font-size: 1.6rem; letter-spacing: 6px; color: #7ee8ff; text-shadow: 0 0 12px #00d9ff; margin-bottom: 4px; }
   .subtitle { font-size: 0.75rem; letter-spacing: 3px; color: #2a7a8c; margin-bottom: 32px; text-transform: uppercase; }
 
-  .core-wrap { position: relative; width: 260px; height: 260px; margin-bottom: 32px; }
+  .core-wrap { position: relative; width: 300px; height: 300px; margin-bottom: 32px; }
 
-  .dragon-svg { position: absolute; width: min(560px, 82vw); height: min(560px, 82vw); top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 0; pointer-events: none; overflow: visible; }
+  .dragon-svg { position: absolute; width: min(600px, 86vw); height: min(600px, 86vw); top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; overflow: visible; }
 
-  /* Seluruh badan naga bergoyang pelan — kesan benar-benar terbang/hidup, bukan diam */
-  .dragon-orbit { transform-origin: 150px 150px; animation: dragonSway 6s ease-in-out infinite; }
-  @keyframes dragonSway { 0%, 100% { transform: rotate(-5deg) scale(1); } 50% { transform: rotate(5deg) scale(1.03); } }
+  /* Seluruh badan naga bergoyang pelan, sinkron dengan gelombang badan supaya terasa satu gerakan yang halus */
+  .dragon-orbit { transform-origin: 150px 150px; animation: dragonSway 4.6s ease-in-out infinite; }
+  @keyframes dragonSway { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.015); } }
 
-  .dragon-flow { stroke-dasharray: 20 12; animation: dragonDash 2s linear infinite; }
-  @keyframes dragonDash { to { stroke-dashoffset: -320; } }
+  .dragon-flow { stroke-dasharray: 22 14; animation: dragonDash 2.4s linear infinite; }
+  @keyframes dragonDash { to { stroke-dashoffset: -360; } }
 
-  .dragon-head { animation: headBob 3.2s ease-in-out infinite; transform-origin: 150px 14px; }
-  @keyframes headBob { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-6px) rotate(4deg); } }
+  /* Kepala + leher menoleh jelas ke kanan dan ke kiri, bukan cuma naik-turun */
+  .dragon-headturn { transform-origin: 150px 40px; animation: headTurn 4.6s ease-in-out infinite; }
+  @keyframes headTurn { 0%, 100% { transform: translateX(-26px) rotate(-10deg); } 50% { transform: translateX(26px) rotate(10deg); } }
   .dragon-eye { animation: eyePulse 1.4s ease-in-out infinite; }
   @keyframes eyePulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 
-  .whisker { transform-origin: 150px 14px; animation: whiskerSway 3s ease-in-out infinite; }
+  .whisker { animation: whiskerSway 4.6s ease-in-out infinite; }
   .whisker-right { animation-name: whiskerSwayR; }
-  @keyframes whiskerSway { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(5deg); } }
-  @keyframes whiskerSwayR { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-5deg); } }
+  @keyframes whiskerSway { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(6deg); } }
+  @keyframes whiskerSwayR { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
 
   /* Sayap besar mengepak dengan gerak rotate+scale supaya terlihat mengembang-melipat, bukan sekadar naik-turun */
-  .wing-left, .wing-right { transform-origin: 150px 10px; }
+  .wing-left, .wing-right { transform-origin: 150px 40px; }
   .wing-left { animation: flapLeft 1.1s ease-in-out infinite; }
   .wing-right { animation: flapRight 1.1s ease-in-out infinite; }
   @keyframes flapLeft { 0%, 100% { transform: rotate(0deg) scaleY(1); } 50% { transform: rotate(20deg) scaleY(0.45); } }
@@ -174,20 +175,20 @@ const HTML_PAGE = `<!DOCTYPE html>
   .dragon-spike { animation: spikeGlow 2.2s ease-in-out infinite; }
   @keyframes spikeGlow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
 
-  .dragon-tail { transform-origin: 195px 120px; animation: tailSwish 2.4s ease-in-out infinite; }
+  .dragon-tail { transform-origin: 131px 42px; animation: tailSwish 2.4s ease-in-out infinite; }
   @keyframes tailSwish { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(14deg); } }
 
   .dragon-spark { animation: sparkPulse 1.8s ease-in-out infinite; }
   @keyframes sparkPulse { 0%, 100% { opacity: 0; transform: scale(0.4); } 50% { opacity: 0.9; transform: scale(1.1); } }
 
-  .ring { position: absolute; border-radius: 50%; border: 1px solid #0d5f73; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
+  .ring { position: absolute; border-radius: 50%; border: 1px solid #0d5f73; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; opacity: 0.4; }
   .ring1 { animation: spin 12s linear infinite; border-top-color: #00d9ff; border-right-color: #00d9ff; }
   .ring2 { inset: 20px; animation: spin 8s linear infinite reverse; border-bottom-color: #00d9ff; }
   .ring3 { inset: 40px; animation: spin 16s linear infinite; border-left-color: #00d9ff; border-top-color: #00d9ff; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   .core {
-    position: absolute; inset: 70px; border-radius: 50%; z-index: 2;
+    position: absolute; inset: 70px; border-radius: 50%; z-index: 3;
     background: radial-gradient(circle, #00d9ff 0%, #007a99 40%, #001a22 90%);
     box-shadow: 0 0 40px #00d9ff, 0 0 80px #0099bb inset;
     display: flex; align-items: center; justify-content: center;
@@ -219,9 +220,9 @@ const HTML_PAGE = `<!DOCTYPE html>
   .transcript .you { color: #00ffcc; }
   .transcript .ai { color: #7ee8ff; }
 
-  /* Panel pengaturan di sisi kanan */
+  /* Panel pengaturan — dipatok ke tepi kanan layar, terpisah dari stage utama */
   .side-panel {
-    flex: 0 0 220px; background: rgba(0, 20, 26, 0.45); border: 1px solid #0d5f73;
+    width: 220px; background: rgba(0, 20, 26, 0.45); border: 1px solid #0d5f73;
     border-radius: 10px; padding: 18px; backdrop-filter: blur(4px);
   }
   .side-panel h3 { font-size: 0.72rem; letter-spacing: 2px; color: #4a9bb0; text-transform: uppercase; margin-bottom: 16px; }
@@ -237,6 +238,10 @@ const HTML_PAGE = `<!DOCTYPE html>
   button:hover { background: rgba(0,217,255,0.25); }
 
   audio { display: none; }
+
+  @media (min-width: 821px) {
+    .side-panel { position: fixed; top: 50%; right: 24px; transform: translateY(-50%); z-index: 5; }
+  }
 
   @media (max-width: 820px) {
     .app-layout { flex-direction: column; align-items: center; }
@@ -267,44 +272,47 @@ const HTML_PAGE = `<!DOCTYPE html>
 
         <g class="dragon-orbit">
           <!-- glow bawah untuk kedalaman -->
-          <path class="dragon-underglow" fill="none" stroke="url(#dragonGrad)" stroke-width="16" stroke-linecap="round" opacity="0.25" filter="url(#dragonGlow)"
-                d="M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120">
-            <animate attributeName="d" dur="3.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
-                     values="M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120;
-                             M150,10 C242,4 282,48 266,126 C255,198 202,244 140,234 C72,236 28,206 46,150 C52,88 92,48 146,66 C184,70 208,98 190,128;
-                             M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120"/>
+          <path class="dragon-underglow" fill="none" stroke="url(#dragonGrad)" stroke-width="18" stroke-linecap="round" opacity="0.25" filter="url(#dragonGlow)"
+                d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
+            <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
+                     values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
+                             M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
+                             M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
           </path>
 
-          <!-- badan utama — bergelombang beneran lewat animasi "d" (bukan cuma dash flow) -->
-          <path class="dragon-flow" fill="none" stroke="url(#dragonGrad)" stroke-width="6" stroke-linecap="round" filter="url(#dragonGlow)"
-                d="M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120">
-            <animate attributeName="d" dur="3.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
-                     values="M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120;
-                             M150,10 C242,4 282,48 266,126 C255,198 202,244 140,234 C72,236 28,206 46,150 C52,88 92,48 146,66 C184,70 208,98 190,128;
-                             M150,10 C230,10 275,55 270,120 C265,190 210,235 145,238 C80,241 35,200 40,145 C45,95 85,55 140,60 C175,63 200,90 195,120"/>
+          <!-- badan utama — lingkaran besar yang benar-benar berombak lewat animasi "d" -->
+          <path class="dragon-flow" fill="none" stroke="url(#dragonGrad)" stroke-width="7" stroke-linecap="round" filter="url(#dragonGlow)"
+                d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
+            <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
+                     values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
+                             M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
+                             M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
           </path>
 
-          <!-- duri tulang belakang di sepanjang badan -->
-          <polygon class="dragon-spike" points="270,106 280,120 270,124" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-          <polygon class="dragon-spike" points="150,252 144,238 160,244" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-          <polygon class="dragon-spike" points="26,148 40,143 32,162" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-          <polygon class="dragon-spike" points="128,48 140,60 118,58" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+          <!-- duri tulang belakang di sepanjang lingkaran badan -->
+          <polygon class="dragon-spike" points="256,105 268,118 256,122" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+          <polygon class="dragon-spike" points="150,272 144,258 160,264" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+          <polygon class="dragon-spike" points="26,150 40,144 32,164" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+          <polygon class="dragon-spike" points="88,40 100,52 78,50" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
 
-          <!-- sirip ekor -->
-          <path class="dragon-tail" d="M195,120 C208,108 224,110 230,124 C220,128 206,130 195,120 Z" fill="url(#dragonGrad)" opacity="0.8" filter="url(#dragonGlow)"/>
-          <circle class="dragon-spark" cx="230" cy="124" r="5" fill="#00ffcc" filter="url(#dragonGlow)"/>
+          <!-- sirip ekor, tepat di ujung lingkaran dekat kepala -->
+          <path class="dragon-tail" d="M131,42 C118,28 100,30 92,44 C104,50 120,52 131,42 Z" fill="url(#dragonGrad)" opacity="0.8" filter="url(#dragonGlow)"/>
+          <circle class="dragon-spark" cx="92" cy="44" r="5" fill="#00ffcc" filter="url(#dragonGlow)"/>
 
-          <!-- sayap besar -->
-          <path class="wing-left" d="M150,10 C96,-34 34,-20 8,22 C50,6 108,13 141,36 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
-          <path class="wing-right" d="M150,10 C204,-34 266,-20 292,22 C250,6 192,13 159,36 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
+          <!-- sayap besar, terpasang di pangkal leher -->
+          <path class="wing-left" d="M150,40 C96,-4 34,10 8,52 C50,36 108,43 141,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
+          <path class="wing-right" d="M150,40 C204,-4 266,10 292,52 C250,36 192,43 159,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
 
-          <!-- kepala -->
-          <g class="dragon-head">
-            <path d="M150,10 L133,-22 L150,-6 L167,-22 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <path class="whisker whisker-left" d="M138,16 C118,22 102,34 90,52" fill="none" stroke="url(#dragonGrad)" stroke-width="1.6" filter="url(#dragonGlow)"/>
-            <path class="whisker whisker-right" d="M162,16 C182,22 198,34 210,52" fill="none" stroke="url(#dragonGrad)" stroke-width="1.6" filter="url(#dragonGlow)"/>
-            <ellipse cx="150" cy="14" rx="15" ry="12" fill="#001a22" stroke="url(#dragonGrad)" stroke-width="2.2" filter="url(#dragonGlow)"/>
-            <circle class="dragon-eye" cx="150" cy="10" r="3.4" fill="#00ffee" filter="url(#dragonGlow)"/>
+          <!-- kepala + leher — menoleh jelas ke kanan & kiri -->
+          <g class="dragon-headturn">
+            <path d="M136,40 C126,8 130,-18 150,-34 C170,-18 174,8 164,40 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <path d="M142,-24 L134,-46 L148,-30 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <path d="M158,-24 L166,-46 L152,-30 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <path d="M138,-8 C144,0 156,0 162,-8" fill="none" stroke="#001a22" stroke-width="2.5"/>
+            <path class="whisker whisker-left" d="M130,-2 C110,6 92,20 80,40" fill="none" stroke="url(#dragonGrad)" stroke-width="1.8" filter="url(#dragonGlow)"/>
+            <path class="whisker whisker-right" d="M170,-2 C190,6 208,20 220,40" fill="none" stroke="url(#dragonGrad)" stroke-width="1.8" filter="url(#dragonGlow)"/>
+            <circle class="dragon-eye" cx="140" cy="-14" r="4" fill="#00ffee" filter="url(#dragonGlow)"/>
+            <circle class="dragon-eye" cx="160" cy="-14" r="4" fill="#00ffee" filter="url(#dragonGlow)"/>
           </g>
         </g>
       </svg>
