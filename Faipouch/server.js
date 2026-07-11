@@ -14,6 +14,9 @@
 import "dotenv/config";
 import express from "express";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { askFastest, cleanForTTS, textToSpeech } from "../WhatsApp/lib/voiceAI.js";
 import { analyzeFile } from "../WhatsApp/lib/geminiFile.js";
 import { openApp, controlVolume, getSystemStats } from "./systemControl.js";
@@ -21,9 +24,13 @@ import { searchFiles } from "./fileSearch.js";
 import { parseCommand } from "./commandRouter.js";
 import { getHistory, addMessage, getLastDocument, setLastDocument } from "./memory.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROBOT_IMAGE_PATH = path.join(__dirname, "public", "robot.png");
+
 const PORT = process.env.FAIPOUCH_PORT || 5000;
 const app = express();
 app.use(express.json());
+app.use("/public", express.static(path.join(__dirname, "public")));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -269,47 +276,39 @@ const HTML_PAGE = `<!DOCTYPE html>
   .title { font-size: 1.6rem; letter-spacing: 6px; color: #7ee8ff; text-shadow: 0 0 12px #00d9ff; margin-bottom: 4px; }
   .subtitle { font-size: 0.75rem; letter-spacing: 3px; color: #2a7a8c; margin-bottom: 32px; text-transform: uppercase; }
 
-  /* Seluruh badan naga bergoyang pelan, sinkron dengan gelombang badan supaya terasa satu gerakan yang halus */
-  .dragon-orbit { transform-origin: 150px 150px; animation: dragonSway 4.6s ease-in-out infinite; }
-  @keyframes dragonSway { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.015); } }
-
-  .dragon-flow { stroke-dasharray: 22 14; animation: dragonDash 2.4s linear infinite; }
-  @keyframes dragonDash { to { stroke-dashoffset: -360; } }
-
-  /* Kepala + leher menoleh jelas ke kanan dan ke kiri, bukan cuma naik-turun */
-  .dragon-headturn { transform-origin: 150px 40px; animation: headTurn 4.6s ease-in-out infinite; }
-  @keyframes headTurn { 0%, 100% { transform: translateX(-20px) rotate(-8deg); } 50% { transform: translateX(20px) rotate(8deg); } }
-  .dragon-eye { animation: eyePulse 1.4s ease-in-out infinite; }
-  @keyframes eyePulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-
-  /* Sayap besar mengepak dengan gerak rotate+scale supaya terlihat mengembang-melipat, bukan sekadar naik-turun */
-  .wing-left, .wing-right { transform-origin: 150px 40px; }
-  .wing-left { animation: flapLeft 1.1s ease-in-out infinite; }
-  .wing-right { animation: flapRight 1.1s ease-in-out infinite; }
-  @keyframes flapLeft { 0%, 100% { transform: rotate(0deg) scaleY(1); } 50% { transform: rotate(20deg) scaleY(0.45); } }
-  @keyframes flapRight { 0%, 100% { transform: rotate(0deg) scaleY(1); } 50% { transform: rotate(-20deg) scaleY(0.45); } }
-
-  .dragon-spike { animation: spikeGlow 2.2s ease-in-out infinite; }
-  @keyframes spikeGlow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
-
-  /* Garis highlight bergerak sepanjang badan — kesan permukaan mengkilap/3D */
-  .dragon-highlight { animation: dragonDash 2.4s linear infinite reverse; }
-
-  /* Sisik berkedip halus, tiap sisik punya delay beda (inline style) supaya berkilau bergantian */
-  .dragon-scale { animation: scaleShimmer 3s ease-in-out infinite; }
-  @keyframes scaleShimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.85; } }
-
-  .dragon-tail { transform-origin: 131px 42px; animation: tailSwish 2.4s ease-in-out infinite; }
-  @keyframes tailSwish { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(14deg); } }
-
-  .dragon-spark { animation: sparkPulse 1.8s ease-in-out infinite; }
-  @keyframes sparkPulse { 0%, 100% { opacity: 0; transform: scale(0.4); } 50% { opacity: 0.9; transform: scale(1.1); } }
-
   .stage-row { display: flex; align-items: center; justify-content: center; gap: 20px; width: 100%; margin-bottom: 24px; }
 
-  .dragon-stage { position: relative; width: min(560px, 74vw); height: min(560px, 74vw); }
-  .ambient-glow { position: absolute; inset: 16%; border-radius: 50%; background: radial-gradient(circle, rgba(0,217,255,0.28) 0%, rgba(0,217,255,0.06) 60%, transparent 80%); filter: blur(6px); z-index: 0; }
-  .dragon-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+  .robot-stage { position: relative; width: min(480px, 68vw); height: min(480px, 68vw); display: flex; align-items: center; justify-content: center; }
+  .ambient-glow { position: absolute; inset: 8%; border-radius: 50%; background: radial-gradient(circle, rgba(0,217,255,0.28) 0%, rgba(0,217,255,0.06) 60%, transparent 80%); filter: blur(6px); z-index: 0; }
+
+  /* Bingkai potret robot — hasil gambar AI (statis), cuma "napas" pelan */
+  .robot-frame {
+    position: relative; width: 78%; height: 78%; border-radius: 50%; overflow: hidden; z-index: 1;
+    border: 2px solid #0d9fc2; box-shadow: 0 0 40px rgba(0,217,255,0.4), 0 0 0 8px rgba(0,217,255,0.06);
+    animation: robotBreathe 4.5s ease-in-out infinite;
+  }
+  @keyframes robotBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+  .robot-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .robot-fallback {
+    width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0, 20, 26, 0.6); text-align: center; padding: 20px;
+  }
+  .fallback-icon { font-size: 3rem; margin-bottom: 12px; }
+  .fallback-text { font-size: 0.72rem; color: #7ee8ff; line-height: 1.6; }
+  .fallback-text code { background: rgba(0,217,255,0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.68rem; }
+
+  /* Lengan hologram — proyeksi vector di samping potret, gerak nyata saat AI menjelaskan/menjawab */
+  .holo-arm { position: absolute; width: 42%; height: 42%; z-index: 2; pointer-events: none; opacity: 0.5; transition: opacity .4s; }
+  .holo-arm-right { right: -4%; bottom: 6%; }
+  .holo-arm-group { transform-origin: 20px 150px; transition: transform .4s ease-out; }
+  .holo-forearm { transform-origin: 80px 110px; transition: transform .4s ease-out; }
+
+  .robot-stage.speaking .holo-arm-right { opacity: 1; }
+  .robot-stage.speaking .holo-arm-right .holo-arm-group { animation: gestureArm 1.6s ease-in-out infinite; }
+  .robot-stage.speaking .holo-arm-right .holo-forearm { animation: gestureForearm 1.6s ease-in-out infinite; }
+  @keyframes gestureArm { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
+  @keyframes gestureForearm { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-20deg); } }
 
   /* Mic kecil di samping kiri — cuma untuk trigger bicara, panggung utama tetap naga */
   .core {
@@ -388,123 +387,42 @@ const HTML_PAGE = `<!DOCTYPE html>
         <span class="core-icon" id="coreIcon">🎙️</span>
       </div>
 
-      <div class="dragon-stage">
+      <div class="robot-stage" id="robotStage">
         <div class="ambient-glow"></div>
-        <svg class="dragon-svg" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+
+        <div class="robot-frame">
+          <img src="/public/robot.png" alt="Faipouch Robot" id="robotImg"
+               onerror="this.style.display='none'; document.getElementById('robotFallback').style.display='flex';">
+          <div class="robot-fallback" id="robotFallback" style="display:none;">
+            <div class="fallback-icon">🤖</div>
+            <div class="fallback-text">Gambar robot belum ada.<br>Jalankan sekali:<br><code>node Faipouch/generateRobot.js</code></div>
+          </div>
+        </div>
+
+        <!-- lengan hologram — bergerak nyata saat AI sedang menjelaskan/menjawab -->
+        <svg class="holo-arm holo-arm-right" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="dragonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id="holoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stop-color="#00ffe1"/>
-              <stop offset="50%" stop-color="#00aaff"/>
               <stop offset="100%" stop-color="#0055ff"/>
             </linearGradient>
-            <filter id="dragonGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="blur"/>
+            <filter id="holoGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.5" result="blur"/>
               <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
             </filter>
           </defs>
 
-          <g class="dragon-orbit">
-            <!-- glow bawah untuk kedalaman -->
-            <path class="dragon-underglow" fill="none" stroke="url(#dragonGrad)" stroke-width="30" stroke-linecap="round" opacity="0.22" filter="url(#dragonGlow)"
-                  d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
-              <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
-                       values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
-                               M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
-                               M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
-            </path>
+          <g class="holo-arm-group">
+            <circle cx="20" cy="150" r="6" fill="url(#holoGrad)" filter="url(#holoGlow)"/>
+            <line x1="20" y1="150" x2="80" y2="110" stroke="url(#holoGrad)" stroke-width="10" stroke-linecap="round" filter="url(#holoGlow)" opacity="0.75"/>
 
-            <!-- badan utama — digemukin jadi badan bertubuh (bukan garis tipis) yang benar-benar berombak -->
-            <path class="dragon-flow" fill="none" stroke="url(#dragonGrad)" stroke-width="17" stroke-linecap="round" filter="url(#dragonGlow)"
-                  d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
-              <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
-                       values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
-                               M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
-                               M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
-            </path>
-
-            <!-- garis highlight bergerak di badan — kesan permukaan silinder mengkilap -->
-            <path class="dragon-highlight" fill="none" stroke="#c8fbff" stroke-width="3" stroke-linecap="round" opacity="0.55" stroke-dasharray="26 70"
-                  d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
-              <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
-                       values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
-                               M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
-                               M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
-            </path>
-
-            <!-- sisik di sepanjang badan -->
-            <g class="dragon-scales" fill="url(#dragonGrad)" filter="url(#dragonGlow)">
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(262,170) rotate(10)" style="animation-delay:0s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(243,215) rotate(35)" style="animation-delay:.2s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(207,249) rotate(60)" style="animation-delay:.4s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(111,257) rotate(110)" style="animation-delay:.6s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(69,231) rotate(135)" style="animation-delay:.8s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(43,189) rotate(160)" style="animation-delay:1s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(51,93) rotate(210)" style="animation-delay:1.2s"/>
-              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(85,57) rotate(235)" style="animation-delay:1.4s"/>
-            </g>
-
-            <!-- duri tulang belakang di sepanjang lingkaran badan -->
-            <polygon class="dragon-spike" points="252,100 268,116 250,122" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="150,278 142,258 162,266" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="20,150 40,142 30,166" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="82,36 100,52 74,50" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-
-            <!-- sirip ekor pendek, tetap dekat lingkaran -->
-            <path class="dragon-tail" d="M131,42 C124,34 114,36 110,46 C118,50 126,49 131,42 Z" fill="url(#dragonGrad)" opacity="0.8" filter="url(#dragonGlow)"/>
-            <circle class="dragon-spark" cx="110" cy="46" r="4" fill="#00ffcc" filter="url(#dragonGlow)"/>
-
-            <!-- kaki depan dengan cakar -->
-            <g class="dragon-leg">
-              <path d="M118,66 C100,82 82,96 68,118" fill="none" stroke="url(#dragonGrad)" stroke-width="11" stroke-linecap="round" filter="url(#dragonGlow)"/>
-              <polygon points="58,114 68,116 60,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <polygon points="66,122 76,122 70,134" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <polygon points="74,116 84,114 78,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            </g>
-            <g class="dragon-leg">
-              <path d="M182,66 C200,82 218,96 232,118" fill="none" stroke="url(#dragonGrad)" stroke-width="11" stroke-linecap="round" filter="url(#dragonGlow)"/>
-              <polygon points="242,114 232,116 240,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <polygon points="234,122 224,122 230,134" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <polygon points="226,116 216,114 222,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            </g>
-
-            <!-- sayap besar dengan tulang sayap, terpasang di pangkal leher -->
-            <g class="wing-left">
-              <path d="M150,40 C96,-4 34,10 8,52 C50,36 108,43 141,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
-              <path class="wing-bone" d="M148,42 L60,26" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-              <path class="wing-bone" d="M146,46 L38,44" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-              <path class="wing-bone" d="M144,52 L24,64" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-            </g>
-            <g class="wing-right">
-              <path d="M150,40 C204,-4 266,10 292,52 C250,36 192,43 159,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
-              <path class="wing-bone" d="M152,42 L240,26" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-              <path class="wing-bone" d="M154,46 L262,44" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-              <path class="wing-bone" d="M156,52 L276,64" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
-            </g>
-
-            <!-- kepala — bentuk tegas & besar dengan gigi, lubang hidung, alis; menoleh kanan & kiri -->
-            <g class="dragon-headturn">
-              <path d="M122,40 C110,10 122,-26 150,-52 C178,-26 190,10 178,40 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <path d="M136,-30 L118,-60 L142,-36 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <path d="M164,-30 L182,-60 L158,-36 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-              <line x1="130" y1="-42" x2="126" y2="-52" stroke="#001a22" stroke-width="1.2"/>
-              <line x1="170" y1="-42" x2="174" y2="-52" stroke="#001a22" stroke-width="1.2"/>
-
-              <!-- gigi di garis rahang -->
-              <polygon points="128,40 132,49 136,40" fill="#001a22"/>
-              <polygon points="140,40 144,50 148,40" fill="#001a22"/>
-              <polygon points="152,40 156,50 160,40" fill="#001a22"/>
-              <polygon points="164,40 168,49 172,40" fill="#001a22"/>
-
-              <!-- lubang hidung -->
-              <ellipse cx="141" cy="-45" rx="2.4" ry="4" fill="#001a22" transform="rotate(-15 141 -45)"/>
-              <ellipse cx="159" cy="-45" rx="2.4" ry="4" fill="#001a22" transform="rotate(15 159 -45)"/>
-
-              <!-- alis -->
-              <path d="M122,-26 Q134,-36 146,-26" fill="none" stroke="#001a22" stroke-width="2"/>
-              <path d="M154,-26 Q166,-36 178,-26" fill="none" stroke="#001a22" stroke-width="2"/>
-
-              <circle class="dragon-eye" cx="134" cy="-18" r="6" fill="#00ffee" filter="url(#dragonGlow)"/>
-              <circle class="dragon-eye" cx="166" cy="-18" r="6" fill="#00ffee" filter="url(#dragonGlow)"/>
+            <g class="holo-forearm">
+              <circle cx="80" cy="110" r="5" fill="url(#holoGrad)" filter="url(#holoGlow)"/>
+              <line x1="80" y1="110" x2="130" y2="70" stroke="url(#holoGrad)" stroke-width="8" stroke-linecap="round" filter="url(#holoGlow)" opacity="0.75"/>
+              <circle cx="130" cy="70" r="7" fill="url(#holoGrad)" filter="url(#holoGlow)" opacity="0.8"/>
+              <line x1="130" y1="70" x2="150" y2="58" stroke="url(#holoGrad)" stroke-width="3" stroke-linecap="round" filter="url(#holoGlow)" opacity="0.7"/>
+              <line x1="130" y1="70" x2="152" y2="68" stroke="url(#holoGrad)" stroke-width="3" stroke-linecap="round" filter="url(#holoGlow)" opacity="0.7"/>
+              <line x1="130" y1="70" x2="148" y2="80" stroke="url(#holoGrad)" stroke-width="3" stroke-linecap="round" filter="url(#holoGlow)" opacity="0.7"/>
             </g>
           </g>
         </svg>
@@ -824,6 +742,12 @@ document.getElementById('player').addEventListener('ended', () => {
     startListen();
   }
 });
+
+// Lengan hologram bergerak selama AI sedang bicara (menjelaskan/menjawab)
+const robotStageEl = document.getElementById('robotStage');
+document.getElementById('player').addEventListener('play', () => robotStageEl.classList.add('speaking'));
+document.getElementById('player').addEventListener('pause', () => robotStageEl.classList.remove('speaking'));
+document.getElementById('player').addEventListener('ended', () => robotStageEl.classList.remove('speaking'));
 
 async function refreshStats() {
   try {
