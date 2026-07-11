@@ -166,6 +166,13 @@ const HTML_PAGE = `<!DOCTYPE html>
   .dragon-spike { animation: spikeGlow 2.2s ease-in-out infinite; }
   @keyframes spikeGlow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
 
+  /* Garis highlight bergerak sepanjang badan — kesan permukaan mengkilap/3D */
+  .dragon-highlight { animation: dragonDash 2.4s linear infinite reverse; }
+
+  /* Sisik berkedip halus, tiap sisik punya delay beda (inline style) supaya berkilau bergantian */
+  .dragon-scale { animation: scaleShimmer 3s ease-in-out infinite; }
+  @keyframes scaleShimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.85; } }
+
   .dragon-tail { transform-origin: 131px 42px; animation: tailSwish 2.4s ease-in-out infinite; }
   @keyframes tailSwish { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(14deg); } }
 
@@ -270,7 +277,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 
           <g class="dragon-orbit">
             <!-- glow bawah untuk kedalaman -->
-            <path class="dragon-underglow" fill="none" stroke="url(#dragonGrad)" stroke-width="18" stroke-linecap="round" opacity="0.25" filter="url(#dragonGlow)"
+            <path class="dragon-underglow" fill="none" stroke="url(#dragonGrad)" stroke-width="30" stroke-linecap="round" opacity="0.22" filter="url(#dragonGlow)"
                   d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
               <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
                        values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
@@ -278,34 +285,96 @@ const HTML_PAGE = `<!DOCTYPE html>
                                M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
             </path>
 
-            <!-- badan utama — lingkaran besar yang benar-benar berombak lewat animasi "d" -->
-            <path class="dragon-flow" fill="none" stroke="url(#dragonGrad)" stroke-width="7" stroke-linecap="round" filter="url(#dragonGlow)"
+            <!-- badan utama — digemukin jadi badan bertubuh (bukan garis tipis) yang benar-benar berombak -->
+            <path class="dragon-flow" fill="none" stroke="url(#dragonGrad)" stroke-width="17" stroke-linecap="round" filter="url(#dragonGlow)"
                   d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
               <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
                        values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
                                M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
                                M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
             </path>
+
+            <!-- garis highlight bergerak di badan — kesan permukaan silinder mengkilap -->
+            <path class="dragon-highlight" fill="none" stroke="#c8fbff" stroke-width="3" stroke-linecap="round" opacity="0.55" stroke-dasharray="26 70"
+                  d="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42">
+              <animate attributeName="d" dur="4.6s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"
+                       values="M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42;
+                               M150,32 C216,32 268,84 268,150 C268,216 216,268 150,268 C84,268 32,216 32,150 C32,90 90,30 128,38;
+                               M150,40 C210.75,40 260,89.25 260,150 C260,210.75 210.75,260 150,260 C89.25,260 40,210.75 40,150 C40,95 95,35 131,42"/>
+            </path>
+
+            <!-- sisik di sepanjang badan -->
+            <g class="dragon-scales" fill="url(#dragonGrad)" filter="url(#dragonGlow)">
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(262,170) rotate(10)" style="animation-delay:0s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(243,215) rotate(35)" style="animation-delay:.2s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(207,249) rotate(60)" style="animation-delay:.4s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(111,257) rotate(110)" style="animation-delay:.6s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(69,231) rotate(135)" style="animation-delay:.8s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(43,189) rotate(160)" style="animation-delay:1s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(51,93) rotate(210)" style="animation-delay:1.2s"/>
+              <polygon class="dragon-scale" points="-5,0 0,-9 5,0 0,9" transform="translate(85,57) rotate(235)" style="animation-delay:1.4s"/>
+            </g>
 
             <!-- duri tulang belakang di sepanjang lingkaran badan -->
-            <polygon class="dragon-spike" points="256,105 268,118 256,122" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="150,272 144,258 160,264" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="26,150 40,144 32,164" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
-            <polygon class="dragon-spike" points="88,40 100,52 78,50" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <polygon class="dragon-spike" points="252,100 268,116 250,122" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <polygon class="dragon-spike" points="150,278 142,258 162,266" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <polygon class="dragon-spike" points="20,150 40,142 30,166" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            <polygon class="dragon-spike" points="82,36 100,52 74,50" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
 
             <!-- sirip ekor pendek, tetap dekat lingkaran -->
             <path class="dragon-tail" d="M131,42 C124,34 114,36 110,46 C118,50 126,49 131,42 Z" fill="url(#dragonGrad)" opacity="0.8" filter="url(#dragonGlow)"/>
             <circle class="dragon-spark" cx="110" cy="46" r="4" fill="#00ffcc" filter="url(#dragonGlow)"/>
 
-            <!-- sayap besar, terpasang di pangkal leher -->
-            <path class="wing-left" d="M150,40 C96,-4 34,10 8,52 C50,36 108,43 141,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
-            <path class="wing-right" d="M150,40 C204,-4 266,10 292,52 C250,36 192,43 159,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
+            <!-- kaki depan dengan cakar -->
+            <g class="dragon-leg">
+              <path d="M118,66 C100,82 82,96 68,118" fill="none" stroke="url(#dragonGrad)" stroke-width="11" stroke-linecap="round" filter="url(#dragonGlow)"/>
+              <polygon points="58,114 68,116 60,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+              <polygon points="66,122 76,122 70,134" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+              <polygon points="74,116 84,114 78,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            </g>
+            <g class="dragon-leg">
+              <path d="M182,66 C200,82 218,96 232,118" fill="none" stroke="url(#dragonGrad)" stroke-width="11" stroke-linecap="round" filter="url(#dragonGlow)"/>
+              <polygon points="242,114 232,116 240,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+              <polygon points="234,122 224,122 230,134" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+              <polygon points="226,116 216,114 222,128" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+            </g>
 
-            <!-- kepala — bentuk tegas & besar supaya jelas terlihat, menoleh kanan & kiri -->
+            <!-- sayap besar dengan tulang sayap, terpasang di pangkal leher -->
+            <g class="wing-left">
+              <path d="M150,40 C96,-4 34,10 8,52 C50,36 108,43 141,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
+              <path class="wing-bone" d="M148,42 L60,26" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+              <path class="wing-bone" d="M146,46 L38,44" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+              <path class="wing-bone" d="M144,52 L24,64" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+            </g>
+            <g class="wing-right">
+              <path d="M150,40 C204,-4 266,10 292,52 C250,36 192,43 159,66 Z" fill="url(#dragonGrad)" opacity="0.5" filter="url(#dragonGlow)"/>
+              <path class="wing-bone" d="M152,42 L240,26" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+              <path class="wing-bone" d="M154,46 L262,44" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+              <path class="wing-bone" d="M156,52 L276,64" fill="none" stroke="#c8fbff" stroke-width="1.4" opacity="0.5"/>
+            </g>
+
+            <!-- kepala — bentuk tegas & besar dengan gigi, lubang hidung, alis; menoleh kanan & kiri -->
             <g class="dragon-headturn">
               <path d="M122,40 C110,10 122,-26 150,-52 C178,-26 190,10 178,40 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
               <path d="M136,-30 L118,-60 L142,-36 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
               <path d="M164,-30 L182,-60 L158,-36 Z" fill="url(#dragonGrad)" filter="url(#dragonGlow)"/>
+              <line x1="130" y1="-42" x2="126" y2="-52" stroke="#001a22" stroke-width="1.2"/>
+              <line x1="170" y1="-42" x2="174" y2="-52" stroke="#001a22" stroke-width="1.2"/>
+
+              <!-- gigi di garis rahang -->
+              <polygon points="128,40 132,49 136,40" fill="#001a22"/>
+              <polygon points="140,40 144,50 148,40" fill="#001a22"/>
+              <polygon points="152,40 156,50 160,40" fill="#001a22"/>
+              <polygon points="164,40 168,49 172,40" fill="#001a22"/>
+
+              <!-- lubang hidung -->
+              <ellipse cx="141" cy="-45" rx="2.4" ry="4" fill="#001a22" transform="rotate(-15 141 -45)"/>
+              <ellipse cx="159" cy="-45" rx="2.4" ry="4" fill="#001a22" transform="rotate(15 159 -45)"/>
+
+              <!-- alis -->
+              <path d="M122,-26 Q134,-36 146,-26" fill="none" stroke="#001a22" stroke-width="2"/>
+              <path d="M154,-26 Q166,-36 178,-26" fill="none" stroke="#001a22" stroke-width="2"/>
+
               <circle class="dragon-eye" cx="134" cy="-18" r="6" fill="#00ffee" filter="url(#dragonGlow)"/>
               <circle class="dragon-eye" cx="166" cy="-18" r="6" fill="#00ffee" filter="url(#dragonGlow)"/>
             </g>
